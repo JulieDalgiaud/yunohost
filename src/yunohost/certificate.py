@@ -29,15 +29,11 @@ import shutil
 import pwd
 import grp
 import smtplib
-import requests
 import subprocess
-import socket
 import dns.resolver
 import glob
 
-from OpenSSL import crypto
 from datetime import datetime
-from requests.exceptions import Timeout
 
 from yunohost.vendor.acme_tiny.acme_tiny import get_crt as sign_certificate
 
@@ -45,9 +41,11 @@ from moulinette.core import MoulinetteError
 from moulinette.utils.log import getActionLogger
 
 import yunohost.domain
+from yunohost.utils.network import get_public_ip
 
+from moulinette import m18n
 from yunohost.app import app_ssowatconf
-from yunohost.service import _run_service_command
+from yunohost.service import _run_service_command, service_regen_conf
 
 
 logger = getActionLogger('yunohost.certmanager')
@@ -295,6 +293,7 @@ def _certificate_install_letsencrypt(auth, domain_list, force=False, no_checks=F
                 m18n.n("certmanager_cert_install_success", domain=domain))
 
         except Exception as e:
+            _display_debug_information(domain)
             logger.error("Certificate installation for %s failed !\nException: %s", domain, e)
 
 
@@ -463,7 +462,7 @@ def _configure_for_acme_challenge(auth, domain):
     nginx_conf_file = "%s/000-acmechallenge.conf" % nginx_conf_folder
 
     nginx_configuration = '''
-location '/.well-known/acme-challenge'
+location ^~ '/.well-known/acme-challenge'
 {
         default_type "text/plain";
         alias %s;
@@ -528,6 +527,9 @@ def _fetch_and_enable_new_certificate(domain, staging=False):
     _set_permissions(WEBROOT_FOLDER, "root", "www-data", 0650)
     _set_permissions(TMP_FOLDER, "root", "root", 0640)
 
+    # Regen conf for dnsmasq if needed
+    _regen_dnsmasq_if_needed()
+
     # Prepare certificate signing request
     logger.info(
         "Prepare key and certificate signing request (CSR) for %s...", domain)
@@ -560,6 +562,7 @@ def _fetch_and_enable_new_certificate(domain, staging=False):
                 'certmanager_hit_rate_limit', domain=domain))
         else:
             logger.error(str(e))
+            _display_debug_information(domain)
             raise MoulinetteError(errno.EINVAL, m18n.n(
                 'certmanager_cert_signing_failed'))
 
@@ -569,9 +572,10 @@ def _fetch_and_enable_new_certificate(domain, staging=False):
         raise MoulinetteError(errno.EINVAL, m18n.n(
             'certmanager_cert_signing_failed'))
 
+    import requests # lazy loading this module for performance reasons
     try:
         intermediate_certificate = requests.get(INTERMEDIATE_CERTIFICATE_URL, timeout=30).text
-    except Timeout as e:
+    except requests.exceptions.Timeout as e:
         raise MoulinetteError(errno.EINVAL, m18n.n('certmanager_couldnt_fetch_intermediate_cert'))
 
     # Now save the key and signed certificate
@@ -620,6 +624,7 @@ def _fetch_and_enable_new_certificate(domain, staging=False):
 
 
 def _prepare_certificate_signing_request(domain, key_file, output_folder):
+    from OpenSSL import crypto # lazy loading this module for performance reasons
     # Init a request
     csr = crypto.X509Req()
 
@@ -651,6 +656,7 @@ def _get_status(domain):
         raise MoulinetteError(errno.EINVAL, m18n.n(
             'certmanager_no_cert_file', domain=domain, file=cert_file))
 
+    from OpenSSL import crypto # lazy loading this module for performance reasons
     try:
         cert = crypto.load_certificate(
             crypto.FILETYPE_PEM, open(cert_file).read())
@@ -753,6 +759,7 @@ def _generate_account_key():
 
 
 def _generate_key(destination_path):
+    from OpenSSL import crypto # lazy loading this module for performance reasons
     k = crypto.PKey()
     k.generate_key(crypto.TYPE_RSA, KEY_SIZE)
 
@@ -806,7 +813,7 @@ def _backup_current_cert(domain):
 
 
 def _check_domain_is_ready_for_ACME(domain):
-    public_ip = yunohost.domain.get_public_ip()
+    public_ip = get_public_ip()
 
     # Check if IP from DNS matches public IP
     if not _dns_ip_match_public_ip(public_ip, domain):
@@ -818,15 +825,8 @@ def _check_domain_is_ready_for_ACME(domain):
         raise MoulinetteError(errno.EINVAL, m18n.n(
             'certmanager_domain_http_not_working', domain=domain))
 
-    # Check if domain is resolved locally (Might happen despite the previous
-    # checks because of dns propagation ?... Acme-tiny won't work in that case,
-    # because it explicitly requests() the domain.)
-    if not _domain_is_resolved_locally(public_ip, domain):
-        raise MoulinetteError(errno.EINVAL, m18n.n(
-            'certmanager_domain_not_resolved_locally', domain=domain))
 
-
-def _dns_ip_match_public_ip(public_ip, domain):
+def _get_dns_ip(domain):
     try:
         resolver = dns.resolver.Resolver()
         resolver.nameservers = DNS_RESOLVERS
@@ -835,15 +835,18 @@ def _dns_ip_match_public_ip(public_ip, domain):
         raise MoulinetteError(errno.EINVAL, m18n.n(
             'certmanager_error_no_A_record', domain=domain))
 
-    dns_ip = str(answers[0])
+    return str(answers[0])
 
-    return dns_ip == public_ip
+
+def _dns_ip_match_public_ip(public_ip, domain):
+    return _get_dns_ip(domain) == public_ip
 
 
 def _domain_is_accessible_through_HTTP(ip, domain):
+    import requests # lazy loading this module for performance reasons
     try:
         requests.head("http://" + ip, headers={"Host": domain}, timeout=10)
-    except Timeout as e:
+    except requests.exceptions.Timeout as e:
         logger.warning(m18n.n('certmanager_http_check_timeout', domain=domain, ip=ip))
         return False
     except Exception as e:
@@ -853,15 +856,65 @@ def _domain_is_accessible_through_HTTP(ip, domain):
     return True
 
 
-def _domain_is_resolved_locally(public_ip, domain):
+def _get_local_dns_ip(domain):
     try:
-        ip = socket.gethostbyname(domain)
-    except socket.error as e:
-        logger.debug("Couldn't get domain '%s' ip because: %s" % (domain, e))
-        return False
+        resolver = dns.resolver.Resolver()
+        answers = resolver.query(domain, "A")
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+        logger.warning("Failed to resolved domain '%s' locally", domain)
+        return None
 
-    logger.debug("Domain '%s' IP address is resolved to %s, expect it to be %s or in the 127.0.0.0/8 address block" % (domain, public_ip, ip))
-    return ip.startswith("127.") or ip == public_ip
+    return str(answers[0])
+
+
+def _display_debug_information(domain):
+    dns_ip = _get_dns_ip(domain)
+    public_ip = get_public_ip()
+    local_dns_ip = _get_local_dns_ip(domain)
+
+    logger.warning("""\
+Debug information:
+ - domain ip from DNS        %s
+ - domain ip from local DNS  %s
+ - public ip of the server   %s
+""", dns_ip, local_dns_ip, public_ip)
+
+
+# FIXME / TODO : ideally this should not be needed. There should be a proper
+# mechanism to regularly check the value of the public IP and trigger
+# corresponding hooks (e.g. dyndns update and dnsmasq regen-conf)
+def _regen_dnsmasq_if_needed():
+    """
+    Update the dnsmasq conf if some IPs are not up to date...
+    """
+
+    ipv4 = get_public_ip()
+    ipv6 = get_public_ip(6)
+
+    do_regen = False
+
+    # For all domain files in DNSmasq conf...
+    domainsconf = glob.glob("/etc/dnsmasq.d/*.*")
+    for domainconf in domainsconf:
+
+        # Look for the IP, it's in the lines with this format :
+        # address=/the.domain.tld/11.22.33.44
+        for line in open(domainconf).readlines():
+            if not line.startswith("address"):
+                continue
+            ip = line.strip().split("/")[2]
+
+            # Compared found IP to current IPv4 / IPv6
+            #             IPv6                   IPv4
+            if (":" in ip and ip != ipv6) or (ip != ipv4):
+                do_regen = True
+                break
+
+        if do_regen:
+            break
+
+    if do_regen:
+        service_regen_conf(["dnsmasq"])
 
 
 def _name_self_CA():

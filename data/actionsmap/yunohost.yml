@@ -50,7 +50,6 @@ _global:
                     uri: ldap://localhost:389
                     base_dn: dc=yunohost,dc=org
         argument_auth: true
-        lock: true
     arguments:
         -v:
             full: --version
@@ -78,17 +77,6 @@ user:
                --fields:
                     help: fields to fetch
                     nargs: "+"
-               -f:
-                    full: --filter
-                    help: LDAP filter used to search
-               -l:
-                    full: --limit
-                    help: Maximum number of user fetched
-                    type: int
-               -o:
-                    full: --offset
-                    help: Starting number for user fetching
-                    type: int
 
         ### user_create()
         create:
@@ -226,6 +214,78 @@ user:
                 username:
                     help: Username or email to get information
 
+    subcategories:
+
+        ssh:
+            subcategory_help: Manage ssh access
+            actions:
+                ### user_ssh_enable()
+                allow:
+                    action_help: Allow the user to uses ssh
+                    api: POST /users/ssh/enable
+                    configuration:
+                        authenticate: all
+                    arguments:
+                        username:
+                            help: Username of the user
+                            extra:
+                                pattern: *pattern_username
+
+                ### user_ssh_disable()
+                disallow:
+                    action_help: Disallow the user to uses ssh
+                    api: POST /users/ssh/disable
+                    configuration:
+                        authenticate: all
+                    arguments:
+                        username:
+                            help: Username of the user
+                            extra:
+                                pattern: *pattern_username
+
+                ### user_ssh_keys_list()
+                list-keys:
+                    action_help: Show user's authorized ssh keys
+                    api: GET /users/ssh/keys
+                    configuration:
+                        authenticate: all
+                    arguments:
+                        username:
+                            help: Username of the user
+                            extra:
+                                pattern: *pattern_username
+
+                ### user_ssh_keys_add()
+                add-key:
+                    action_help: Add a new authorized ssh key for this user
+                    api: POST /users/ssh/key
+                    configuration:
+                        authenticate: all
+                    arguments:
+                        username:
+                            help: Username of the user
+                            extra:
+                                pattern: *pattern_username
+                        key:
+                            help: The key to be added
+                        -c:
+                            full: --comment
+                            help: Optionnal comment about the key
+
+                ### user_ssh_keys_remove()
+                remove-key:
+                    action_help: Remove an authorized ssh key for this user
+                    api: DELETE /users/ssh/key
+                    configuration:
+                        authenticate: all
+                    arguments:
+                        username:
+                            help: Username of the user
+                            extra:
+                                pattern: *pattern_username
+                        key:
+                            help: The key to be removed
+
 
 #############################
 #          Domain           #
@@ -241,25 +301,12 @@ domain:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-            arguments:
-                -f:
-                    full: --filter
-                    help: LDAP filter used to search
-                -l:
-                    full: --limit
-                    help: Maximum number of domain fetched
-                    type: int
-                -o:
-                    full: --offset
-                    help: Starting number for domain fetching
-                    type: int
 
         ### domain_add()
         add:
             action_help: Create a custom domain
             api: POST /domains
             configuration:
-                lock: false
                 authenticate: all
             arguments:
                 domain:
@@ -278,7 +325,6 @@ domain:
             action_help: Delete domains
             api: DELETE /domains/<domain>
             configuration:
-                lock: false
                 authenticate: all
             arguments:
                 domain:
@@ -291,7 +337,6 @@ domain:
             action_help: Generate DNS configuration for a domain
             api: GET /domains/<domain>/dns
             configuration:
-                lock: false
                 authenticate:
                     - api
             arguments:
@@ -498,7 +543,6 @@ app:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 app:
                     help: Name, local path or git URL of the app to install
@@ -520,7 +564,6 @@ app:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 app:
                     help: App(s) to delete
@@ -532,7 +575,6 @@ app:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 app:
                     help: App(s) to upgrade (default all)
@@ -551,7 +593,6 @@ app:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 app:
                     help: Target app instance name
@@ -678,6 +719,19 @@ app:
                 authenticate: all
                 authenticator: ldap-anonymous
 
+        ### app_change_label()
+        change-label:
+            action_help: Change app label
+            api: PUT /apps/<app>/label
+            configuration:
+                authenticate: all
+                authenticator: ldap-anonymous
+            arguments:
+                app:
+                    help: App ID
+                new_label:
+                    help: New app label
+
         ### app_addaccess() TODO: Write help
         addaccess:
             action_help: Grant access right to users (everyone by default)
@@ -728,8 +782,6 @@ backup:
         create:
             action_help: Create a backup local archive
             api: POST /backup
-            configuration:
-                lock: false
             arguments:
                 -n:
                     full: --name
@@ -778,7 +830,6 @@ backup:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 name:
                     help: Name of the local backup archive
@@ -808,8 +859,6 @@ backup:
         list:
             action_help: List available local backup archives
             api: GET /backup/archives
-            configuration:
-                lock: false
             arguments:
                 -i:
                     full: --with-info
@@ -824,8 +873,6 @@ backup:
         info:
             action_help: Show info about a local backup archive
             api: GET /backup/archives/<name>
-            configuration:
-                lock: false
             arguments:
                 name:
                     help: Name of the local backup archive
@@ -842,8 +889,6 @@ backup:
         delete:
             action_help: Delete a backup archive
             api: DELETE /backup/archives/<name>
-            configuration:
-                lock: false
             arguments:
                 name:
                     help: Name of the archive to delete
@@ -1144,8 +1189,6 @@ service:
         regen-conf:
             action_help: Regenerate the configuration file(s) for a service
             api: PUT /services/regenconf
-            configuration:
-                lock: false
             deprecated_alias:
                 - regenconf
             arguments:
@@ -1390,7 +1433,6 @@ tools:
                 - PUT /domains/main
             configuration:
                 authenticate: all
-                lock: false
             arguments:
                 -n:
                     full: --new-domain
@@ -1404,7 +1446,6 @@ tools:
             api: POST /postinstall
             configuration:
                 authenticate: false
-                lock: false
             arguments:
                 -d:
                     full: --domain
@@ -1428,8 +1469,6 @@ tools:
         update:
             action_help: YunoHost update
             api: PUT /update
-            configuration:
-                lock: false
             arguments:
                 --ignore-apps:
                     help: Ignore apps cache update and changelog
@@ -1445,7 +1484,6 @@ tools:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 --ignore-apps:
                     help: Ignore apps upgrade
@@ -1461,7 +1499,6 @@ tools:
             configuration:
                 authenticate: all
                 authenticator: ldap-anonymous
-                lock: false
             arguments:
                 -p:
                     full: --private
@@ -1477,6 +1514,79 @@ tools:
                     help: Port to check
                     extra:
                         pattern: *pattern_port
+
+        ### tools_shell()
+        shell:
+            configuration:
+                authenticate: all
+            action_help: Launch a development shell
+            arguments:
+                -c:
+                    help: python command to execute
+                    full: --command
+
+        ### tools_shutdown()
+        shutdown:
+            action_help: Shutdown the server
+            api: PUT /shutdown
+            arguments:
+                -f:
+                    help: skip the shutdown confirmation
+                    full: --force
+                    action: store_true
+
+        ### tools_reboot()
+        reboot:
+            action_help: Reboot the server
+            api: PUT /reboot
+            arguments:
+                -f:
+                    help: skip the reboot confirmation
+                    full: --force
+                    action: store_true
+
+    subcategories:
+
+      migrations:
+          subcategory_help: Manage migrations
+          actions:
+
+              ### tools_migrations_list()
+              list:
+                  action_help: List migrations
+                  api: GET /migrations
+                  arguments:
+                    --pending:
+                        help: list only pending migrations
+                        action: store_true
+                    --done:
+                        help: list only migrations already performed
+                        action: store_true
+
+              ### tools_migrations_migrate()
+              migrate:
+                  action_help: Perform migrations
+                  api: POST /migrations/migrate
+                  arguments:
+                    -t:
+                        help: target migration number (or 0), latest one by default
+                        type: int
+                        full: --target
+                    -s:
+                        help: skip the migration(s), use it only if you know what you are doing
+                        full: --skip
+                        action: store_true
+                    --auto:
+                        help: automatic mode, won't run manual migrations, use it only if you know what you are doing
+                        action: store_true
+                    --accept-disclaimer:
+                        help: accept disclaimers of migration (please read them before using this option)
+                        action: store_true
+
+              ### tools_migrations_state()
+              state:
+                  action_help: Show current migrations state
+                  api: GET /migrations/state
 
 
 #############################

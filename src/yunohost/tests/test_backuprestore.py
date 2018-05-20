@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from mock import ANY
 
+from moulinette import m18n
 from moulinette.core import init_authenticator
 from yunohost.app import app_install, app_remove, app_ssowatconf
 from yunohost.app import _is_installed
@@ -633,5 +634,44 @@ def _test_backup_and_restore_app(app):
 
     assert app_is_installed(app)
 
+###############################################################################
+#  Some edge cases                                                            #
+###############################################################################
+
+def test_restore_archive_with_no_json(mocker):
+
+    # Create a backup with no info.json associated
+    os.system("touch /tmp/afile")
+    os.system("tar -czvf /home/yunohost.backup/archives/badbackup.tar.gz /tmp/afile")
+    
+    assert "badbackup" in backup_list()["archives"]
+
+    mocker.spy(m18n, "n")
+    with pytest.raises(MoulinetteError):
+        backup_restore(auth, name="badbackup", force=True,
+                       ignore_system=False, ignore_apps=False)
+    m18n.n.assert_any_call('backup_invalid_archive')
 
 
+def test_backup_binds_are_readonly(monkeypatch):
+
+    def custom_mount_and_backup(self, backup_manager):
+        self.manager = backup_manager
+        self._organize_files()
+
+        confssh = os.path.join(self.work_dir, "conf/ssh")
+        output = subprocess.check_output("touch %s/test 2>&1 || true" % confssh,
+                                         shell=True)
+
+        assert "Read-only file system" in output
+
+        if self._recursive_umount(self.work_dir) > 0:
+            raise Exception("Backup cleaning failed !")
+
+        self.clean()
+
+    monkeypatch.setattr("yunohost.backup.BackupMethod.mount_and_backup",
+            custom_mount_and_backup)
+
+    # Create the backup
+    backup_create(ignore_system=False, ignore_apps=True)

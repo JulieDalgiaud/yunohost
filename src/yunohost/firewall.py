@@ -33,6 +33,7 @@ except ImportError:
     sys.stderr.write('Error: Yunohost CLI Require miniupnpc lib\n')
     sys.exit(1)
 
+from moulinette import m18n
 from moulinette.core import MoulinetteError
 from moulinette.utils import process
 from moulinette.utils.log import getActionLogger
@@ -233,7 +234,7 @@ def firewall_reload(skip_upnp=False):
         ]
 
         # Execute each rule
-        if process.check_commands(rules, callback=_on_rule_command_error):
+        if process.run_commands(rules, callback=_on_rule_command_error):
             errors = True
         reloaded = True
 
@@ -262,7 +263,7 @@ def firewall_reload(skip_upnp=False):
         ]
 
         # Execute each rule
-        if process.check_commands(rules, callback=_on_rule_command_error):
+        if process.run_commands(rules, callback=_on_rule_command_error):
             errors = True
         reloaded = True
 
