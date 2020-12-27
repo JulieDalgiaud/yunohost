@@ -1545,7 +1545,10 @@ tools:
           actions:
               list_mounted:
                   action_help: List mounted filesystem
-                  api: GET /mounted_file
+                  api: GET /list_mounted
+              list_remotes:
+                  action_help: List remotes filesystem (NFS)
+                  api: GET /list_remotes
 
 #############################
 #           Hook            #

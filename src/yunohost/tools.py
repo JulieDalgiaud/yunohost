@@ -33,7 +33,7 @@ from importlib import import_module
 from moulinette import msignals, m18n
 from moulinette.utils.log import getActionLogger
 from moulinette.utils.process import check_output, call_async_output
-from moulinette.utils.filesystem import write_to_json, read_yaml, write_to_yaml
+from moulinette.utils.filesystem import write_to_json, read_yaml, write_to_yaml, read_file
 
 from yunohost.app import _update_apps_catalog, app_info, app_upgrade, _initialize_apps_catalog_system
 from yunohost.domain import domain_add
@@ -1036,13 +1036,50 @@ class Migration(object):
     def description(self):
         return m18n.n("migration_description_%s" % self.id)
 
-def tools_filesystem_list_mounted():
-    wanted_filesystems = ['ext','fat']
+def _tools_filesystem_print(row_size, rows_title, data):
+    row_size = "{:<" + str(row_size) + "}"
+    row_format = row_size * len(rows_title)
+    print(row_format.format(*rows_title))
+    for data, row in zip(rows_title, data):
+        print(row_format.format(*row))
+
+def _parse_mount(wanted_filesystems):
     cmd_result = subprocess.check_output(["mount"], shell=True)
+
     mounted = [ i for i in cmd_result.decode('utf8').split('\n') if any(x in i for x in wanted_filesystems) ]
     mounted = [ [ i.split(" ")[0], i.split(" ")[2], i.split(" ")[4], i.split(" ")[5] ] for i in mounted ]
-    mounted_tabular = ["Device", "Mounting point", "Filesystem", "Options"]
-    row_format ="{:>20}" * (len(mounted_tabular) + 1)
-    print(row_format.format("", *mounted_tabular))
-    for mounted, row in zip(mounted_tabular, mounted):
-        print(row_format.format("", *row))
+
+    return mounted
+
+def _parse_fstab(wanted_filesystems=[]):
+    fstab = [i.strip() for i in read_file("/root/fstab").split('\n')]
+    fstab = [i.split(' ') for i in fstab if len(i) > 0 and i[0] != '#' ]
+    parsed_fstab = []
+    for line in fstab:
+        line = [i for i in line if len(i.strip()) > 0]
+        if len(wanted_filesystems) == 0 or any(x in line[2].strip() for x in wanted_filesystems):
+            parsed_fstab = parsed_fstab + [ line ]
+
+    return parsed_fstab
+
+def tools_filesystem_list_mounted():
+    wanted_filesystems = ['ext','fat']
+    row_title = ["Device", "Mounting point", "Filesystem", "Options"]
+
+    _tools_filesystem_print(20, row_title, _parse_mount(wanted_filesystems))
+
+def tools_filesystem_list_remotes():
+    wanted_filesystems = ['nfs']
+    mounted = _parse_mount(wanted_filesystems)
+    fstab = _parse_fstab(wanted_filesystems)
+    fstab = [i[0].split(':') + i[1:-2]  for i in fstab]
+
+    result = []
+    for fstab_line in fstab:
+        mounting_point_found = False
+        for mounted_line in mounted:
+            mounting_point_found = mounted_line[1] == fstab_line[1]
+        result = result + [ ["Yes" if mounting_point_found else "No"] + fstab_line ]
+
+    row_title = ["Mounted", "Remote system", "Remote mounting point", "Local mounting point", "Filesystem", "Options"]
+    _tools_filesystem_print(25, row_title, result)
