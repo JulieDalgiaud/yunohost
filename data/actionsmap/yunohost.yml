@@ -1540,7 +1540,12 @@ tools:
               state:
                   action_help: Show current migrations state
                   api: GET /migrations/state
-
+      filesystem:
+          subcategory_help: Manage mounting points
+          actions:
+              list_mounted:
+                  action_help: List mounted filesystem
+                  api: GET /mounted_file
 
 #############################
 #           Hook            #

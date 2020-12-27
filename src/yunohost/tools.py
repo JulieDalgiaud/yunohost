@@ -1035,3 +1035,14 @@ class Migration(object):
     @property
     def description(self):
         return m18n.n("migration_description_%s" % self.id)
+
+def tools_filesystem_list_mounted():
+    wanted_filesystems = ['ext','fat']
+    cmd_result = subprocess.check_output(["mount"], shell=True)
+    mounted = [ i for i in cmd_result.decode('utf8').split('\n') if any(x in i for x in wanted_filesystems) ]
+    mounted = [ [ i.split(" ")[0], i.split(" ")[2], i.split(" ")[4], i.split(" ")[5] ] for i in mounted ]
+    mounted_tabular = ["Device", "Mounting point", "Filesystem", "Options"]
+    row_format ="{:>20}" * (len(mounted_tabular) + 1)
+    print(row_format.format("", *mounted_tabular))
+    for mounted, row in zip(mounted_tabular, mounted):
+        print(row_format.format("", *row))
