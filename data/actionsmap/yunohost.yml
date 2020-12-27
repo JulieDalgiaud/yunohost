@@ -1540,15 +1540,20 @@ tools:
               state:
                   action_help: Show current migrations state
                   api: GET /migrations/state
-      filesystem:
+      devices:
           subcategory_help: Manage mounting points
           actions:
-              list_mounted:
-                  action_help: List mounted filesystem
-                  api: GET /list_mounted
-              list_remotes:
-                  action_help: List remotes filesystem (NFS)
-                  api: GET /list_remotes
+              ### tools_devices_list()
+              list:
+                  action_help: List devices
+                  api: GET /list_devices
+                  arguments:
+                      --local:
+                        help: List only local devices
+                        action: store_true
+                      --remote:
+                        help: List only remote devices
+                        action: store_true
 
 #############################
 #           Hook            #

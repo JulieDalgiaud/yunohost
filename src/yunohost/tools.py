@@ -1036,18 +1036,11 @@ class Migration(object):
     def description(self):
         return m18n.n("migration_description_%s" % self.id)
 
-def _tools_filesystem_print(row_size, rows_title, data):
-    row_size = "{:<" + str(row_size) + "}"
-    row_format = row_size * len(rows_title)
-    print(row_format.format(*rows_title))
-    for data, row in zip(rows_title, data):
-        print(row_format.format(*row))
-
 def _parse_mount(wanted_filesystems):
     cmd_result = subprocess.check_output(["mount"], shell=True)
 
     mounted = [ i for i in cmd_result.decode('utf8').split('\n') if any(x in i for x in wanted_filesystems) ]
-    mounted = [ [ i.split(" ")[0], i.split(" ")[2], i.split(" ")[4], i.split(" ")[5] ] for i in mounted ]
+    mounted = [ [ i.split(" ")[0], i.split(" ")[2], i.split(" ")[4], i.split(" ")[5][1:-1] ] for i in mounted ]
 
     return mounted
 
@@ -1062,24 +1055,42 @@ def _parse_fstab(wanted_filesystems=[]):
 
     return parsed_fstab
 
-def tools_filesystem_list_mounted():
-    wanted_filesystems = ['ext','fat']
-    row_title = ["Device", "Mounting point", "Filesystem", "Options"]
-
-    _tools_filesystem_print(20, row_title, _parse_mount(wanted_filesystems))
-
-def tools_filesystem_list_remotes():
-    wanted_filesystems = ['nfs']
+def tools_devices_list(local=False, remote=False):
+    local_filesystems = [ "ext", "ntfs", "fat", "btrfs", "zfs" ]
+    remote_filesystems = [ "nfs", "sshfs" ]
+    wanted_filesystems = local_filesystems + remote_filesystems
     mounted = _parse_mount(wanted_filesystems)
     fstab = _parse_fstab(wanted_filesystems)
-    fstab = [i[0].split(':') + i[1:-2]  for i in fstab]
 
-    result = []
+    devices = []
     for fstab_line in fstab:
         mounting_point_found = False
         for mounted_line in mounted:
             mounting_point_found = mounted_line[1] == fstab_line[1]
-        result = result + [ ["Yes" if mounting_point_found else "No"] + fstab_line ]
+        devices = devices + [ ["Yes" if mounting_point_found else "No", "Yes"] + fstab_line ]
 
-    row_title = ["Mounted", "Remote system", "Remote mounting point", "Local mounting point", "Filesystem", "Options"]
-    _tools_filesystem_print(25, row_title, result)
+    for mounted_line in mounted:
+        fstab_line_found = False
+        for fstab_line in fstab:
+            fstab_line_found = fstab_line[1] == mounted_line[1]
+        devices = devices + [ ["Yes", "Yes" if fstab_line_found else "No"] + mounted_line ]
+
+    result = {'devices': {}}
+    for line in devices:
+        device = {
+                'mounted': line[0],
+                'in_fstab': line[1],
+                'local_mounting_point': line[3],
+                'filesystem': line[4],
+                'type': "local" if any(x in line[4] for x in local_filesystems) else "remote",
+                'options': line[5].split(',')
+                }
+        if device['type'] == "remote":
+            device['remote_address'] = line[2].split(':')[0]
+            device['remote_mounting_point'] = line[2].split(':')[1]
+        else:
+            device['device'] = line[2]
+
+        if (device['type'] == "remote" and not local) or (device['type'] == "local" and not remote):
+            result['devices'][device['local_mounting_point']] = device
+    return result
