@@ -1540,13 +1540,13 @@ tools:
               state:
                   action_help: Show current migrations state
                   api: GET /migrations/state
-      devices:
+      storage:
           subcategory_help: Manage mounting points
           actions:
-              ### tools_devices_list()
-              list:
-                  action_help: List devices
-                  api: GET /list_devices
+              ### tools_storage_list_mounting_points()
+              list_mounting_points:
+                  action_help: List mounting points
+                  api: GET /list_mounting_points
                   arguments:
                       --local:
                         help: List only local devices

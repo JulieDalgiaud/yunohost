@@ -1045,7 +1045,7 @@ def _parse_mount(wanted_filesystems):
     return mounted
 
 def _parse_fstab(wanted_filesystems=[]):
-    fstab = [i.strip() for i in read_file("/root/fstab").split('\n')]
+    fstab = [i.strip() for i in read_file("/etc/fstab").split('\n')]
     fstab = [i.split(' ') for i in fstab if len(i) > 0 and i[0] != '#' ]
     parsed_fstab = []
     for line in fstab:
@@ -1055,7 +1055,7 @@ def _parse_fstab(wanted_filesystems=[]):
 
     return parsed_fstab
 
-def tools_devices_list(local=False, remote=False):
+def tools_storage_list_mounting_points(local=False, remote=False):
     local_filesystems = [ "ext", "ntfs", "fat", "btrfs", "zfs" ]
     remote_filesystems = [ "nfs", "sshfs" ]
     wanted_filesystems = local_filesystems + remote_filesystems
