@@ -1036,28 +1036,31 @@ class Migration(object):
     def description(self):
         return m18n.n("migration_description_%s" % self.id)
 
+
 def _parse_mount(wanted_filesystems):
     cmd_result = subprocess.check_output(["mount"], shell=True)
 
-    mounted = [ i for i in cmd_result.decode('utf8').split('\n') if any(x in i for x in wanted_filesystems) ]
-    mounted = [ [ i.split(" ")[0], i.split(" ")[2], i.split(" ")[4], i.split(" ")[5][1:-1] ] for i in mounted ]
+    mounted = [i for i in cmd_result.decode('utf8').split('\n') if any(x in i for x in wanted_filesystems)]
+    mounted = [[i.split(" ")[0], i.split(" ")[2], i.split(" ")[4], i.split(" ")[5][1:-1]] for i in mounted]
 
     return mounted
 
+
 def _parse_fstab(wanted_filesystems=[]):
     fstab = [i.strip() for i in read_file("/etc/fstab").split('\n')]
-    fstab = [i.split(' ') for i in fstab if len(i) > 0 and i[0] != '#' ]
+    fstab = [i.split(' ') for i in fstab if len(i) > 0 and i[0] != '#']
     parsed_fstab = []
     for line in fstab:
         line = [i for i in line if len(i.strip()) > 0]
         if len(wanted_filesystems) == 0 or any(x in line[2].strip() for x in wanted_filesystems):
-            parsed_fstab = parsed_fstab + [ line ]
+            parsed_fstab = parsed_fstab + [line]
 
     return parsed_fstab
 
+
 def tools_storage_list_mounting_points(local=False, remote=False):
-    local_filesystems = [ "ext", "ntfs", "fat", "btrfs", "zfs" ]
-    remote_filesystems = [ "nfs", "sshfs" ]
+    local_filesystems = ["ext", "ntfs", "fat", "btrfs", "zfs"]
+    remote_filesystems = ["nfs", "sshfs"]
     wanted_filesystems = local_filesystems + remote_filesystems
     mounted = _parse_mount(wanted_filesystems)
     fstab = _parse_fstab(wanted_filesystems)
@@ -1067,24 +1070,24 @@ def tools_storage_list_mounting_points(local=False, remote=False):
         mounting_point_found = False
         for mounted_line in mounted:
             mounting_point_found = mounted_line[1] == fstab_line[1]
-        devices = devices + [ ["Yes" if mounting_point_found else "No", "Yes"] + fstab_line ]
+        devices = devices + [["Yes" if mounting_point_found else "No", "Yes"] + fstab_line]
 
     for mounted_line in mounted:
         fstab_line_found = False
         for fstab_line in fstab:
             fstab_line_found = fstab_line[1] == mounted_line[1]
-        devices = devices + [ ["Yes", "Yes" if fstab_line_found else "No"] + mounted_line ]
+        devices = devices + [["Yes", "Yes" if fstab_line_found else "No"] + mounted_line]
 
     result = {'devices': {}}
     for line in devices:
         device = {
-                'mounted': line[0],
-                'in_fstab': line[1],
-                'local_mounting_point': line[3],
-                'filesystem': line[4],
-                'type': "local" if any(x in line[4] for x in local_filesystems) else "remote",
-                'options': line[5].split(',')
-                }
+            'mounted': line[0],
+            'in_fstab': line[1],
+            'local_mounting_point': line[3],
+            'filesystem': line[4],
+            'type': "local" if any(x in line[4] for x in local_filesystems) else "remote",
+            'options': line[5].split(',')
+        }
         if device['type'] == "remote":
             device['remote_address'] = line[2].split(':')[0]
             device['remote_mounting_point'] = line[2].split(':')[1]
@@ -1093,4 +1096,27 @@ def tools_storage_list_mounting_points(local=False, remote=False):
 
         if (device['type'] == "remote" and not local) or (device['type'] == "local" and not remote):
             result['devices'][device['local_mounting_point']] = device
+    return result
+
+
+def tools_storage_list_nfs_shares():
+    exports = [i.strip() for i in read_file("/etc/exports").split('\n')]
+    exports = [i for i in exports if len(i) > 0 and i[0] != '#']
+
+    result = {'nfs_shares': {}}
+    for share in exports:
+        directory = share.split(' ')[0]
+        share = share[len(directory):]
+        targets = []
+        for target in share.split(')')[:-1]:
+            targets = targets + [{
+                'ip': target.split('(')[0].strip(),
+                'options': target.split('(')[1].strip().split(',')
+            }]
+
+        result['nfs_shares'][directory] = {
+            'directory': directory,
+            'shared_with': targets
+        }
+
     return result

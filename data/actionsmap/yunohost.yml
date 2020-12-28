@@ -1549,11 +1549,15 @@ tools:
                   api: GET /list_mounting_points
                   arguments:
                       --local:
-                        help: List only local devices
-                        action: store_true
+                          help: List only local devices
+                          action: store_true
                       --remote:
-                        help: List only remote devices
-                        action: store_true
+                          help: List only remote devices
+                          action: store_true
+              ### tools_storage_list_nfs_shares()
+              list_nfs_shares:
+                action_help: List configured NFS shared directories from this server
+                api: GET /list_nfs_shares
 
 #############################
 #           Hook            #
