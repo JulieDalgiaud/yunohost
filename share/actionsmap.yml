@@ -1987,3 +1987,17 @@ diagnosis:
                     help: Remove a filter (it should be an existing filter as listed with --list)
                     nargs: "*"
                     metavar: CRITERIA
+
+#############################
+#   System Information      #
+#############################
+system_information:
+    category_help: Display the system information of the server.
+    subcategories:
+
+        network:
+            subcategory_help: Display the information about the network.
+            actions:
+               interfaces:
+                    action_help: Display the information about the network.
+                    api: GET /system-information/network/interfaces
