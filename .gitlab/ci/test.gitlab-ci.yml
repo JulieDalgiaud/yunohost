@@ -1,9 +1,10 @@
 .install_debs: &install_debs
     - apt-get update -o Acquire::Retries=3
-    - DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt --assume-yes -o Dpkg::Options::="--force-confold" --allow-downgrades install ./$YNH_BUILD_DIR/*.deb
+    - DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt --assume-yes -o Dpkg::Options::="--force-confold" --allow-downgrades install ${CI_PROJECT_DIR}/*.deb
+    - pip3 install -U mock pip pytest pytest-cov pytest-mock pytest-sugar requests-mock tox ansi2html black jinja2 "packaging<22"
 
 .test-stage:
-  stage: tests
+  stage: test
   image: "after-install"
   variables:
     PYTEST_ADDOPTS: "--color=yes"
@@ -11,7 +12,7 @@
     - *install_debs
   cache:
     paths: 
-      - src/yunohost/tests/apps
+      - src/tests/apps
     key: "$CI_JOB_STAGE-$CI_COMMIT_REF_SLUG"
   needs:
       - job: build-yunohost
@@ -22,21 +23,22 @@
         artifacts: true
       - job: upgrade
 
-
 ########################################
 # TESTS
 ########################################
 
 full-tests:
-  stage: tests
+  stage: test
   image: "before-install"
   variables:
     PYTEST_ADDOPTS: "--color=yes"
   before_script:
     - *install_debs
-    - yunohost tools postinstall -d domain.tld -p the_password --ignore-dyndns
+    - yunohost tools postinstall -d domain.tld -u syssa -F 'Syssa Mine' -p the_password --ignore-dyndns --force-diskspace
   script:
-    - python -m pytest --cov=yunohost tests/ src/yunohost/tests/ --junitxml=report.xml
+    - python3 -m pytest --cov=yunohost tests/ src/tests/ src/diagnosers/ --junitxml=report.xml
+    - cd tests
+    - bash test_helpers.sh
   needs:
       - job: build-yunohost
         artifacts: true
@@ -48,73 +50,150 @@ full-tests:
     reports:
       junit: report.xml
 
-root-tests:
+test-actionmap:
   extends: .test-stage
   script:
-    - python -m pytest tests
+    - python3 -m pytest tests/test_actionmap.py
+  only:
+    changes:
+      - share/actionsmap.yml
+
+test-helpers:
+  extends: .test-stage
+  script:
+    - cd tests
+    - bash test_helpers.sh
+  only:
+    changes:
+      - helpers/*
+
+test-domains:
+  extends: .test-stage
+  script:
+    - python3 -m pytest src/tests/test_domains.py
+  only:
+    changes:
+      - src/domain.py
+
+test-dns:
+  extends: .test-stage
+  script:
+    - python3 -m pytest src/tests/test_dns.py
+  only:
+    changes:
+      - src/dns.py
+      - src/utils/dns.py
 
 test-apps:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_apps.py
+    - python3 -m pytest src/tests/test_apps.py
+  only:
+    changes:
+      - src/app.py
 
 test-appscatalog:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_appscatalog.py
+    - python3 -m pytest src/tests/test_app_catalog.py
+  only:
+    changes:
+      - src/app_calalog.py
 
 test-appurl:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_appurl.py
+    - python3 -m pytest src/tests/test_appurl.py
+  only:
+    changes:
+      - src/app.py
 
-test-apps-arguments-parsing:
+test-questions:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_apps_arguments_parsing.py
+    - python3 -m pytest src/tests/test_questions.py
+  only:
+    changes:
+      - src/utils/config.py
 
-test-backuprestore:
+test-app-config:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_backuprestore.py
+    - python3 -m pytest src/tests/test_app_config.py
+  only:
+    changes:
+      - src/app.py
+      - src/utils/config.py
+
+test-app-resources:
+  extends: .test-stage
+  script:
+    - python3 -m pytest src/tests/test_app_resources.py
+  only:
+    changes:
+      - src/app.py
+      - src/utils/resources.py
 
 test-changeurl:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_changeurl.py
+    - python3 -m pytest src/tests/test_changeurl.py
+  only:
+    changes:
+      - src/app.py
+
+test-backuprestore:
+  extends: .test-stage
+  script:
+    - python3 -m pytest src/tests/test_backuprestore.py
+  only:
+    changes:
+      - src/backup.py
 
 test-permission:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_permission.py
+    - python3 -m pytest src/tests/test_permission.py
+  only:
+    changes:
+      - src/permission.py
 
 test-settings:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_settings.py
+    - python3 -m pytest src/tests/test_settings.py
+  only:
+    changes:
+      - src/settings.py
 
 test-user-group:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_user-group.py
-    
+    - python3 -m pytest src/tests/test_user-group.py
+  only:
+    changes:
+      - src/user.py
+
 test-regenconf:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_regenconf.py
+    - python3 -m pytest src/tests/test_regenconf.py
+  only:
+    changes:
+      - src/regenconf.py
 
 test-service:
   extends: .test-stage
   script:
-    - cd src/yunohost
-    - python -m pytest tests/test_service.py
+    - python3 -m pytest src/tests/test_service.py
+  only:
+    changes:
+      - src/service.py
+
+test-ldapauth:
+  extends: .test-stage
+  script:
+    - python3 -m pytest src/tests/test_ldapauth.py
+  only:
+    changes:
+      - src/authenticators/*.py

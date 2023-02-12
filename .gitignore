@@ -31,7 +31,14 @@ pip-log.txt
 .mr.developer.cfg
 
 # moulinette lib
-src/yunohost/locales
+src/locales
 
 # Test
-src/yunohost/tests/apps
+src/tests/apps
+
+# Tmp/local doc stuff
+doc/bash-completion.sh
+doc/bash_completion.d
+doc/openapi.js
+doc/openapi.json
+doc/swagger

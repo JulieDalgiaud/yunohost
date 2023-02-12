@@ -1,0 +1,4 @@
+backup_dir="$1/data/mail"
+
+cp -a $backup_dir/. /var/mail/ || echo 'No mail found'
+chown -R vmail:mail /var/mail/
