@@ -5,6 +5,7 @@
 import psutil
 import ipaddress
 from socket import AddressFamily
+from pyroute2 import IPRoute
 
 from collections import defaultdict
 
@@ -62,3 +63,55 @@ def system_information_network_interfaces():
                 interfaces_formated[interface][familly].append(tmp_info)
 
     return interfaces_formated
+
+
+def system_information_network_routes():
+
+###
+# Linux routing tables:
+#    255     local      1
+#    254     main       2
+#    253     default    3
+#    0       unspec     4
+###
+
+    with IPRoute() as ipr:
+        interfaces = system_information_network_interfaces()
+        ips_interface = {}
+        for interface in interfaces:
+            for family in ["ip4", "ip6"]:
+                for address in interfaces[interface][family]:
+                    ips_interface[address["address_short"]] = interface
+
+        routes = []
+        ## TODO: ipv6
+        for route in ipr.get_routes():
+            if route.get_attr("RTA_TABLE") != 254:
+                continue
+            if (route.get_attr("RTA_DST") or route.get_attr("RTA_GATEWAY")):
+                if route.get_attr("RTA_PREFSRC") and route.get_attr("RTA_PREFSRC") == "127.0.0.1":
+                    continue
+                if not route.get_attr("RTA_PREFSRC") and \
+                        (not route.get_attr("RTA_DST") or not route.get_attr("RTA_GATEWAY")):
+                    continue
+
+                if not route.get_attr("RTA_DST"):
+                    destination = "0.0.0.0/0"
+                else:
+                    destination = f"{str(route.get_attr('RTA_DST'))}/{str(route.get('dst_len'))}"
+
+                if route.get_attr("RTA_PREFSRC"):
+                    src = str(route.get_attr("RTA_PREFSRC"))
+                else:
+                    full_route = ipr.route('get', dst=destination)
+                    src = str(full_route[0]["attrs"][3][1])
+
+                interface = ips_interface[src]
+                routes.append({"destination": destination,
+                               "interface": interface,
+                               "src": src})
+
+    return {"routes": routes}
+
+def system_information_network_gateway():
+    return []

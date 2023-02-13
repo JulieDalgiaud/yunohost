@@ -1999,5 +1999,11 @@ system_information:
             subcategory_help: Display the information about the network.
             actions:
                interfaces:
-                    action_help: Display the information about the network.
+                    action_help: Display the information about the network interfaces.
                     api: GET /system-information/network/interfaces
+               gateway:
+                    action_help: Display the information about the default routes.
+                    api: GET /system-information/network/gateway
+               routes:
+                    action_help: Display the information about the routing tables.
+                    api: GET /system-information/network/routes
