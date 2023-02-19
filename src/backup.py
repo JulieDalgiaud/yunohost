@@ -52,6 +52,7 @@ from yunohost.app import (
     _make_environment_for_app_script,
     _make_tmp_workdir_for_app,
     _get_manifest_of_app,
+    app_remove,
 )
 from yunohost.hook import (
     hook_list,
@@ -940,7 +941,14 @@ class RestoreManager:
 
             # Use a dummy password which is not gonna be saved anywhere
             # because the next thing to happen should be that a full restore of the LDAP db will happen
-            tools_postinstall(domain, "tmpadmin", "Tmp Admin", password=random_ascii(70), ignore_dyndns=True, overwrite_root_password=False)
+            tools_postinstall(
+                domain,
+                "tmpadmin",
+                "Tmp Admin",
+                password=random_ascii(70),
+                ignore_dyndns=True,
+                overwrite_root_password=False,
+            )
 
     def clean(self):
         """
@@ -1189,7 +1197,7 @@ class RestoreManager:
         except Exception as e:
             raise YunohostError(
                 f"The following critical error happened during restoration: {e}",
-                raw_msg=True
+                raw_msg=True,
             )
         finally:
             self.clean()
@@ -1368,8 +1376,6 @@ class RestoreManager:
         from yunohost.user import user_group_list
         from yunohost.permission import (
             permission_create,
-            permission_delete,
-            user_permission_list,
             permission_sync_to_user,
         )
 
@@ -1550,36 +1556,7 @@ class RestoreManager:
             else:
                 self.targets.set_result("apps", app_instance_name, "Error")
 
-                remove_script = os.path.join(app_scripts_in_archive, "remove")
-
-                # Setup environment for remove script
-                env_dict_remove = _make_environment_for_app_script(
-                    app_instance_name, workdir=app_workdir
-                )
-                remove_operation_logger = OperationLogger(
-                    "remove_on_failed_restore",
-                    [("app", app_instance_name)],
-                    env=env_dict_remove,
-                )
-                remove_operation_logger.start()
-
-                # Execute remove script
-                if hook_exec(remove_script, env=env_dict_remove)[0] != 0:
-                    msg = m18n.n("app_not_properly_removed", app=app_instance_name)
-                    logger.warning(msg)
-                    remove_operation_logger.error(msg)
-                else:
-                    remove_operation_logger.success()
-
-                # Cleaning app directory
-                shutil.rmtree(app_settings_new_path, ignore_errors=True)
-
-                # Remove all permission in LDAP for this app
-                for permission_name in user_permission_list()["permissions"].keys():
-                    if permission_name.startswith(app_instance_name + "."):
-                        permission_delete(permission_name, force=True)
-
-                # TODO Cleaning app hooks
+                app_remove(app_instance_name, force_workdir=app_workdir)
 
                 logger.error(failure_message_with_debug_instructions)
 
