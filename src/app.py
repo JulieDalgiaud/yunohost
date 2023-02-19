@@ -743,7 +743,7 @@ def app_upgrade(app=[], url=None, file=None, force=False, no_safety_backup=False
                     "Upgrade failed ... attempting to restore the satefy backup (Yunohost first need to remove the app for this) ..."
                 )
 
-                app_remove(app_instance_name)
+                app_remove(app_instance_name, force_workdir=extracted_app_folder)
                 backup_restore(
                     name=safety_backup_name, apps=[app_instance_name], force=True
                 )
@@ -1050,6 +1050,7 @@ def app_install(
     if packaging_format >= 2:
         for question in questions:
             # Except user-provider passwords
+            # ... which we need to reinject later in the env_dict
             if question.type == "password":
                 continue
 
@@ -1101,11 +1102,22 @@ def app_install(
         app_instance_name, args=args, workdir=extracted_app_folder, action="install"
     )
 
+    # If packaging_format v2+, save all install questions as settings
+    if packaging_format >= 2:
+        for question in questions:
+            # Reinject user-provider passwords which are not in the app settings
+            # (cf a few line before)
+            if question.type == "password":
+                env_dict[question.name] = question.value
+
+    # We want to hav the env_dict in the log ... but not password values
     env_dict_for_logging = env_dict.copy()
     for question in questions:
         # Or should it be more generally question.redact ?
         if question.type == "password":
             del env_dict_for_logging[f"YNH_APP_ARG_{question.name.upper()}"]
+            if question.name in env_dict_for_logging:
+                del env_dict_for_logging[question.name]
 
     operation_logger.extra.update({"env": env_dict_for_logging})
 
@@ -1258,14 +1270,14 @@ def app_install(
 
 
 @is_unit_operation()
-def app_remove(operation_logger, app, purge=False):
+def app_remove(operation_logger, app, purge=False, force_workdir=None):
     """
     Remove app
 
     Keyword arguments:
         app -- App(s) to delete
         purge -- Remove with all app data
-
+        force_workdir -- Special var to force the working directoy to use, in context such as remove-after-failed-upgrade or remove-after-failed-restore
     """
     from yunohost.utils.legacy import _patch_legacy_php_versions, _patch_legacy_helpers
     from yunohost.hook import hook_exec, hook_remove, hook_callback
@@ -1284,7 +1296,6 @@ def app_remove(operation_logger, app, purge=False):
     operation_logger.start()
 
     logger.info(m18n.n("app_start_remove", app=app))
-
     app_setting_path = os.path.join(APPS_SETTING_PATH, app)
 
     # Attempt to patch legacy helpers ...
@@ -1294,8 +1305,20 @@ def app_remove(operation_logger, app, purge=False):
     # script might date back from jessie install)
     _patch_legacy_php_versions(app_setting_path)
 
-    manifest = _get_manifest_of_app(app_setting_path)
-    tmp_workdir_for_app = _make_tmp_workdir_for_app(app=app)
+    if force_workdir:
+        # This is when e.g. calling app_remove() from the upgrade-failed case
+        # where we want to remove using the *new* remove script and not the old one
+        # and also get the new manifest
+        # It's especially important during v1->v2 app format transition where the
+        # setting names change (e.g. install_dir instead of final_path) and
+        # running the old remove script doesnt make sense anymore ...
+        tmp_workdir_for_app = tempfile.mkdtemp(prefix="app_", dir=APP_TMP_WORKDIRS)
+        os.system(f"cp -a {force_workdir}/* {tmp_workdir_for_app}/")
+    else:
+        tmp_workdir_for_app = _make_tmp_workdir_for_app(app=app)
+
+    manifest = _get_manifest_of_app(tmp_workdir_for_app)
+
     remove_script = f"{tmp_workdir_for_app}/scripts/remove"
 
     env_dict = {}
@@ -2065,7 +2088,12 @@ def _parse_app_doc_and_notifications(path):
 
         if pagename not in doc:
             doc[pagename] = {}
-        doc[pagename][lang] = read_file(filepath).strip()
+
+        try:
+            doc[pagename][lang] = read_file(filepath).strip()
+        except Exception as e:
+            logger.error(e)
+            continue
 
     notifications = {}
 
@@ -2079,7 +2107,11 @@ def _parse_app_doc_and_notifications(path):
             lang = m.groups()[0].strip("_") if m.groups()[0] else "en"
             if pagename not in notifications[step]:
                 notifications[step][pagename] = {}
-            notifications[step][pagename][lang] = read_file(filepath).strip()
+            try:
+                notifications[step][pagename][lang] = read_file(filepath).strip()
+            except Exception as e:
+                logger.error(e)
+                continue
 
         for filepath in glob.glob(os.path.join(path, "doc", f"{step}.d") + "/*.md"):
             m = re.match(
@@ -2091,7 +2123,12 @@ def _parse_app_doc_and_notifications(path):
             lang = lang.strip("_") if lang else "en"
             if pagename not in notifications[step]:
                 notifications[step][pagename] = {}
-            notifications[step][pagename][lang] = read_file(filepath).strip()
+
+            try:
+                notifications[step][pagename][lang] = read_file(filepath).strip()
+            except Exception as e:
+                logger.error(e)
+                continue
 
     return doc, notifications
 
@@ -2570,7 +2607,7 @@ def _check_manifest_requirements(
     yield (
         "arch",
         arch_requirement in ["all", "?"] or arch in arch_requirement,
-        {"current": arch, "required": arch_requirement},
+        {"current": arch, "required": ", ".join(arch_requirement)},
         "app_arch_not_supported",  # i18n: app_arch_not_supported
     )
 
@@ -2655,9 +2692,7 @@ def _guess_webapp_path_requirement(app_folder: str) -> str:
     if len(domain_questions) == 1 and len(path_questions) == 1:
         return "domain_and_path"
     if len(domain_questions) == 1 and len(path_questions) == 0:
-
         if manifest.get("packaging_format", 0) < 2:
-
             # This is likely to be a full-domain app...
 
             # Confirm that this is a full-domain app This should cover most cases
@@ -2668,7 +2703,9 @@ def _guess_webapp_path_requirement(app_folder: str) -> str:
 
             # Full-domain apps typically declare something like path_url="/" or path=/
             # and use ynh_webpath_register or yunohost_app_checkurl inside the install script
-            install_script_content = read_file(os.path.join(app_folder, "scripts/install"))
+            install_script_content = read_file(
+                os.path.join(app_folder, "scripts/install")
+            )
 
             if re.search(
                 r"\npath(_url)?=[\"']?/[\"']?", install_script_content
@@ -2678,7 +2715,9 @@ def _guess_webapp_path_requirement(app_folder: str) -> str:
         else:
             # For packaging v2 apps, check if there's a permission with url being a string
             perm_resource = manifest.get("resources", {}).get("permissions")
-            if perm_resource is not None and isinstance(perm_resource.get("main", {}).get("url"), str):
+            if perm_resource is not None and isinstance(
+                perm_resource.get("main", {}).get("url"), str
+            ):
                 return "full_domain"
 
     return "?"
