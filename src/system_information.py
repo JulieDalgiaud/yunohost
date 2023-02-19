@@ -84,19 +84,27 @@ def system_information_network_routes():
                     ips_interface[address["address_short"]] = interface
 
         routes = []
-        ## TODO: ipv6
         for route in ipr.get_routes():
+            # Only get the routes from the main routing table
             if route.get_attr("RTA_TABLE") != 254:
                 continue
+
             if (route.get_attr("RTA_DST") or route.get_attr("RTA_GATEWAY")):
-                if route.get_attr("RTA_PREFSRC") and route.get_attr("RTA_PREFSRC") == "127.0.0.1":
+
+                # We don't print the routes related to the loopback because it's not really interesting
+                if route.get_attr("RTA_PREFSRC") and \
+                        ("127.0.0.1" in [route.get_attr("RTA_PREFSRC"), route.get_attr("RTA_PREFDST")]):
                     continue
-                if not route.get_attr("RTA_PREFSRC") and \
-                        (not route.get_attr("RTA_DST") or not route.get_attr("RTA_GATEWAY")):
+
+                # If no dest and no gateway this route is not interesting either
+                if not route.get_attr("RTA_DST") and not route.get_attr("RTA_GATEWAY"):
                     continue
 
                 if not route.get_attr("RTA_DST"):
-                    destination = "0.0.0.0/0"
+                    if route["family"] == 2:
+                        destination = "0.0.0.0/0"
+                    else:
+                        destination = "::/0"
                 else:
                     destination = f"{str(route.get_attr('RTA_DST'))}/{str(route.get('dst_len'))}"
 
@@ -107,7 +115,8 @@ def system_information_network_routes():
                     src = str(full_route[0]["attrs"][3][1])
 
                 interface = ips_interface[src]
-                routes.append({"destination": destination,
+                routes.append({"family": "ip4" if route["family"] == 2 else "ip6",
+                               "destination": destination,
                                "interface": interface,
                                "src": src})
 
