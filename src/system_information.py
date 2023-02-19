@@ -100,25 +100,42 @@ def system_information_network_routes():
                 if not route.get_attr("RTA_DST") and not route.get_attr("RTA_GATEWAY"):
                     continue
 
-                if not route.get_attr("RTA_DST"):
-                    if route["family"] == 2:
-                        destination = "0.0.0.0/0"
+                # If no OIF it is blackhole or unreachable
+                if route.get_attr("RTA_OIF"):
+                    reachable = True
+
+                    # Get OIF
+                    if not route.get_attr("RTA_DST"):
+                        if route["family"] == 2:
+                            destination = "0.0.0.0/0"
+                        else:
+                            destination = "::/0"
                     else:
-                        destination = "::/0"
+                        destination = f"{str(route.get_attr('RTA_DST'))}/{str(route.get('dst_len'))}"
+
+                    if route.get_attr("RTA_PREFSRC"):
+                        src = str(route.get_attr("RTA_PREFSRC"))
+                    else:
+                        full_route = ipr.route('get', dst=destination)
+                        src = str(full_route[0]["attrs"][3][1])
+                    interface = ips_interface[src]
+
+                    # TODO Get metric
                 else:
+                    # Interface is not reachable because no OIF
+                    # It can be "unreachable", "blackhole" or "prohibit"
+                    reachable = False
+                    interface = None
+                    metric = None
+                    src = None
                     destination = f"{str(route.get_attr('RTA_DST'))}/{str(route.get('dst_len'))}"
 
-                if route.get_attr("RTA_PREFSRC"):
-                    src = str(route.get_attr("RTA_PREFSRC"))
-                else:
-                    full_route = ipr.route('get', dst=destination)
-                    src = str(full_route[0]["attrs"][3][1])
-
-                interface = ips_interface[src]
                 routes.append({"family": "ip4" if route["family"] == 2 else "ip6",
                                "destination": destination,
                                "interface": interface,
-                               "src": src})
+                               "src": src,
+                               "metric": metric,
+                               "reachable": reachable})
 
     return {"routes": routes}
 
