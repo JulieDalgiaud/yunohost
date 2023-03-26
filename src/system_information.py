@@ -20,12 +20,18 @@ logger = getActionLogger("yunohost.system-information")
 
 def system_information_network_interfaces():
     interfaces = psutil.net_if_addrs()
+    interface_status = psutil.net_if_stats()
 
     interfaces_formated = defaultdict(dict)
 
     for interface in interfaces:
         if str(interface) == "lo":
             continue
+
+        if interface in interface_status and interface_status[interface].isup:
+            interfaces_formated[interface]["status"] = "UP"
+        else:
+            interfaces_formated[interface]["status"] = "DOWN"
 
         for familly in ["ip4", "ip6"]:
             interfaces_formated[interface][familly] = []
